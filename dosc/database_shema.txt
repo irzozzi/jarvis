@@ -1,0 +1,41 @@
+ТАБЛИЦЫ:
+
+1. users
+   - id (uuid, primary key)
+   - email (string, unique)
+   - hashed_password (string)
+   - created_at (timestamp)
+
+2. profiles
+   - id (uuid, primary key)
+   - user_id (uuid, foreign key references users.id)
+   - personality_type (string)
+   - settings (jsonb)
+
+3. habits
+   - id (uuid, primary key)
+   - user_id (uuid, foreign key references users.id)
+   - name (string)
+   - type (string)  -- boolean, numeric, timer
+   - target (float)
+   - unit (string)
+   - schedule (jsonb)
+   - created_at (timestamp)
+   - is_active (boolean)
+
+4. habit_logs
+   - id (uuid, primary key)
+   - habit_id (uuid, foreign key references habits.id)
+   - value (float)
+   - notes (text)
+   - mood (integer)
+   - completed_at (timestamp)
+
+5. context
+   - id (uuid, primary key)
+   - user_id (uuid, foreign key references users.id)
+   - timestamp (timestamp)
+   - location_type (string)
+   - latitude (float)
+   - longitude (float)
+   - activity (string)
