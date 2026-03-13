@@ -1,0 +1,19 @@
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+backend/venv/
+
+# Local environment variables (never commit secrets)
+.env
+backend/.env
+
+# Editor / IDE
+.vscode/
+
