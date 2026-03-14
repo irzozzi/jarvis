@@ -2,6 +2,7 @@ from pydantic import BaseModel, ConfigDict
 from uuid import UUID
 from datetime import datetime
 from typing import Optional
+from .schedule import Schedule
 
 class HabitBase(BaseModel):
     name: str
@@ -9,7 +10,7 @@ class HabitBase(BaseModel):
     type: str
     target: float
     unit: Optional[str] = None 
-    shedule: Optional[dict] = None 
+    sсhedule: Optional[Schedule] = None 
 
 class HabitCreate(HabitBase):
     pass
