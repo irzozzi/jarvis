@@ -10,7 +10,7 @@ class HabitBase(BaseModel):
     type: str
     target: float
     unit: Optional[str] = None 
-    sсhedule: Optional[Schedule] = None 
+    schedule: Optional[Schedule] = None 
 
 class HabitCreate(HabitBase):
     pass

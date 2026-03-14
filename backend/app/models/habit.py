@@ -14,6 +14,6 @@ class Habit(Base):
     type = Column(String, nullable=False)
     target = Column(Float, nullable=False)
     unit = Column(String, nullable=True)
-    sсhedule = Column(JSONB, nullable=True)
+    schedule = Column(JSONB, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)

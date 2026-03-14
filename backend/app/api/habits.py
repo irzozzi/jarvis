@@ -109,7 +109,7 @@ def create_habit_log(
         raise HTTPException(status_code=404, detail="Habit not found")
 
     log = models.HabitLog(
-        **log_in.model_dump(),
+        **log_in.model_dump(exclude={"habit_id"}),
         habit_id=habit_id
     )
     db.add(log)
