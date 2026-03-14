@@ -9,7 +9,7 @@ app = FastAPI(title="Jarvis API")
 
 app.include_router(auth.router)
 app.include_router(users.router)
-app.include_router(habits.router)  # ← добавить эту строку
+app.include_router(habits.router)  
 
 @app.get("/")
 def root():

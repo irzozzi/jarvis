@@ -7,6 +7,8 @@ from typing import List
 from .. import schemas, models
 from ..api import deps
 
+from ..services import stats as stats_service
+
 router = APIRouter(prefix="/habits", tags=["habits"])
 
 
@@ -111,7 +113,7 @@ def create_habit_log(
     log = models.HabitLog(
         **log_in.model_dump(exclude={"habit_id"}),
         habit_id=habit_id
-    )
+    )   
     db.add(log)
     db.commit()
     db.refresh(log)
@@ -137,3 +139,27 @@ def read_habit_logs(
         models.HabitLog.habit_id == habit_id
     ).order_by(desc(models.HabitLog.completed_at)).offset(skip).limit(limit).all()
     return logs
+
+@router.get("/{habit_id}/stats")
+def get_habit_stats(
+    habit_id: UUID,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+): 
+    habit = db.query(models.Habit).filter(
+        models.Habit.id == habit_id,
+        models.Habit.user_id == current_user.id
+    ).first()
+    if not habit:
+        raise HTTPException(status_code=404, detail="Habit not found ")
+
+    stats = stats_service.get_habt_stats(db, habit)   
+    return stats
+
+@router.get("/stats")
+def get_overall_stats(
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+): 
+    stats = stats_service.get_overall_stats(db, current_user.id)
+    return stats         
