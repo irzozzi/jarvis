@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPExecption, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from uuid import UUID
@@ -47,7 +47,7 @@ def read_habit(
         models.Habit.user_id == current_user.id
     ).first()
     if not habit:
-        raise HTTPExecption(status_code=404, detail="Habit not found")
+        raise HTTPException(status_code=404, detail="Habit not found")
         return habit
 
 @router.put("/{habit_id}", response_model=schemas.HabitOut)
@@ -62,7 +62,7 @@ def update_habit(
         models.Habit.user_id == current_user.id
     ).first()
     if not habit:
-        raise HTTPExecption(status_code=404, detail="Habit not found")
+        raise HTTPException(status_code=404, detail="Habit not found")
 
     for field, value in habit_in.model_dump().items():
         setattr(habit, field, value)
@@ -82,7 +82,7 @@ def delete_habit(
         models.Habit.user_id == current_user.id
     ).first()
     if not habit:
-        raise HTTPExecption(status_code=404, detail="Habot not found")
+        raise HTTPException(status_code=404, detail="Habot not found")
 
     db.delete(habit)
     db.commit()
@@ -101,7 +101,7 @@ def create_habit_log(
         models.Habit.use_id == current_user.id
     ).first()
     if not habit:
-        raise HTTPExecption(status_code=404, detail="Habit not found")
+        raise HTTPException(status_code=404, detail="Habit not found")
 
     log = models.HabitLog(
         **log_in.model_dump(),
@@ -125,7 +125,7 @@ def read_habit_logs(
         models.Habit.user_id == current_user.id
     ).first()
     if not habit:
-        raise HTTPExecption(status_code=404, detail="Habit not found")
+        raise HTTPException(status_code=404, detail="Habit not found")
 
     logs = db.query(models.HabitLog).filter(
         models.HabitLog.habit_id == habit_id
