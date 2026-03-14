@@ -1,15 +1,15 @@
 from fastapi import FastAPI
-
-from .api import auth, users
-from .core.database import Base, engine
-from .models import user
+from .core.database import engine, Base
+from .models import user, habit, habit_log
+from .api import auth, users, habits
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Jarvis API")
+
 app.include_router(auth.router)
 app.include_router(users.router)
-
+app.include_router(habits.router)  # ← добавить эту строку
 
 @app.get("/")
 def root():
