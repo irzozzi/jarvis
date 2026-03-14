@@ -6,11 +6,22 @@ from typing import List
 
 from .. import schemas, models
 from ..api import deps
-
 from ..services import stats as stats_service
 
 router = APIRouter(prefix="/habits", tags=["habits"])
 
+
+# ---------- Статические маршруты (без параметров в пути) ----------
+@router.get("/stats")
+def get_overall_stats(
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """
+    Общая статистика по всем привычкам пользователя
+    """
+    stats = stats_service.get_overall_stats(db, current_user.id)
+    return stats
 
 @router.get("/", response_model=List[schemas.HabitOut])
 def read_habits(
@@ -19,6 +30,9 @@ def read_habits(
     skip: int = 0,
     limit: int = 100,
 ):
+    """
+    Список всех привычек текущего пользователя
+    """
     habits = db.query(models.Habit).filter(
         models.Habit.user_id == current_user.id
     ).offset(skip).limit(limit).all()
@@ -31,6 +45,9 @@ def create_habit(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
+    """
+    Создание новой привычки
+    """
     habit = models.Habit(
         **habit_in.model_dump(),
         user_id=current_user.id
@@ -41,12 +58,88 @@ def create_habit(
     return habit
 
 
+# ---------- Маршруты с параметрами, но более специфичные ----------
+@router.get("/{habit_id}/stats")
+def get_habit_stats(
+    habit_id: UUID,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """
+    Статистика по конкретной привычке (серия, проценты, среднее)
+    """
+    habit = db.query(models.Habit).filter(
+        models.Habit.id == habit_id,
+        models.Habit.user_id == current_user.id
+    ).first()
+    if not habit:
+        raise HTTPException(status_code=404, detail="Habit not found")
+
+    stats = stats_service.get_habit_stats(db, habit)
+    return stats
+
+
+@router.get("/{habit_id}/logs", response_model=List[schemas.HabitLogOut])
+def read_habit_logs(
+    habit_id: UUID,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+    skip: int = 0,
+    limit: int = 100,
+):
+    """
+    Получить все логи выполнения конкретной привычки
+    """
+    habit = db.query(models.Habit).filter(
+        models.Habit.id == habit_id,
+        models.Habit.user_id == current_user.id
+    ).first()
+    if not habit:
+        raise HTTPException(status_code=404, detail="Habit not found")
+
+    logs = db.query(models.HabitLog).filter(
+        models.HabitLog.habit_id == habit_id
+    ).order_by(desc(models.HabitLog.completed_at)).offset(skip).limit(limit).all()
+    return logs
+
+
+@router.post("/{habit_id}/logs", response_model=schemas.HabitLogOut, status_code=status.HTTP_201_CREATED)
+def create_habit_log(
+    habit_id: UUID,
+    log_in: schemas.HabitLogCreate,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """
+    Добавить лог выполнения привычки
+    """
+    habit = db.query(models.Habit).filter(
+        models.Habit.id == habit_id,
+        models.Habit.user_id == current_user.id
+    ).first()
+    if not habit:
+        raise HTTPException(status_code=404, detail="Habit not found")
+
+    log = models.HabitLog(
+        **log_in.model_dump(exclude={"habit_id"}),
+        habit_id=habit_id
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+    return log
+
+
+# ---------- Общий динамический маршрут (должен быть последним) ----------
 @router.get("/{habit_id}", response_model=schemas.HabitOut)
 def read_habit(
     habit_id: UUID,
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
+    """
+    Детальная информация о конкретной привычке
+    """
     habit = db.query(models.Habit).filter(
         models.Habit.id == habit_id,
         models.Habit.user_id == current_user.id
@@ -63,6 +156,9 @@ def update_habit(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
+    """
+    Полное обновление привычки
+    """
     habit = db.query(models.Habit).filter(
         models.Habit.id == habit_id,
         models.Habit.user_id == current_user.id
@@ -84,6 +180,9 @@ def delete_habit(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
+    """
+    Удаление привычки (и всех связанных логов благодаря CASCADE)
+    """
     habit = db.query(models.Habit).filter(
         models.Habit.id == habit_id,
         models.Habit.user_id == current_user.id
@@ -94,72 +193,3 @@ def delete_habit(
     db.delete(habit)
     db.commit()
     return None
-
-
-@router.post("/{habit_id}/logs", response_model=schemas.HabitLogOut, status_code=status.HTTP_201_CREATED)
-def create_habit_log(
-    habit_id: UUID,
-    log_in: schemas.HabitLogCreate,
-    db: Session = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user),
-):
-    habit = db.query(models.Habit).filter(
-        models.Habit.id == habit_id,
-        models.Habit.user_id == current_user.id
-    ).first()
-    if not habit:
-        raise HTTPException(status_code=404, detail="Habit not found")
-
-    log = models.HabitLog(
-        **log_in.model_dump(exclude={"habit_id"}),
-        habit_id=habit_id
-    )   
-    db.add(log)
-    db.commit()
-    db.refresh(log)
-    return log
-
-
-@router.get("/{habit_id}/logs", response_model=List[schemas.HabitLogOut])
-def read_habit_logs(
-    habit_id: UUID,
-    db: Session = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user),
-    skip: int = 0,
-    limit: int = 100,
-):
-    habit = db.query(models.Habit).filter(
-        models.Habit.id == habit_id,
-        models.Habit.user_id == current_user.id
-    ).first()
-    if not habit:
-        raise HTTPException(status_code=404, detail="Habit not found")
-
-    logs = db.query(models.HabitLog).filter(
-        models.HabitLog.habit_id == habit_id
-    ).order_by(desc(models.HabitLog.completed_at)).offset(skip).limit(limit).all()
-    return logs
-
-@router.get("/{habit_id}/stats")
-def get_habit_stats(
-    habit_id: UUID,
-    db: Session = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user),
-): 
-    habit = db.query(models.Habit).filter(
-        models.Habit.id == habit_id,
-        models.Habit.user_id == current_user.id
-    ).first()
-    if not habit:
-        raise HTTPException(status_code=404, detail="Habit not found ")
-
-    stats = stats_service.get_habt_stats(db, habit)   
-    return stats
-
-@router.get("/stats")
-def get_overall_stats(
-    db: Session = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_user),
-): 
-    stats = stats_service.get_overall_stats(db, current_user.id)
-    return stats         
