@@ -5,14 +5,15 @@ from uuid import UUID
 from typing import List
 
 from .. import schemas, models
-from ..api import deps 
+from ..api import deps
 
 router = APIRouter(prefix="/habits", tags=["habits"])
+
 
 @router.get("/", response_model=List[schemas.HabitOut])
 def read_habits(
     db: Session = Depends(deps.get_db),
-    current_user: models.user = Depends(deps.get_current_user),
+    current_user: models.User = Depends(deps.get_current_user),
     skip: int = 0,
     limit: int = 100,
 ):
@@ -21,11 +22,12 @@ def read_habits(
     ).offset(skip).limit(limit).all()
     return habits
 
+
 @router.post("/", response_model=schemas.HabitOut, status_code=status.HTTP_201_CREATED)
 def create_habit(
-    habit_in: schemas.HabitCreate, 
+    habit_in: schemas.HabitCreate,
     db: Session = Depends(deps.get_db),
-    current_user: models.user = Depends(deps.get_current_user),
+    current_user: models.User = Depends(deps.get_current_user),
 ):
     habit = models.Habit(
         **habit_in.model_dump(),
@@ -34,7 +36,8 @@ def create_habit(
     db.add(habit)
     db.commit()
     db.refresh(habit)
-    return habit 
+    return habit
+
 
 @router.get("/{habit_id}", response_model=schemas.HabitOut)
 def read_habit(
@@ -48,7 +51,8 @@ def read_habit(
     ).first()
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
-        return habit
+    return habit
+
 
 @router.put("/{habit_id}", response_model=schemas.HabitOut)
 def update_habit(
@@ -69,7 +73,8 @@ def update_habit(
 
     db.commit()
     db.refresh(habit)
-    return habit       
+    return habit
+
 
 @router.delete("/{habit_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_habit(
@@ -82,11 +87,12 @@ def delete_habit(
         models.Habit.user_id == current_user.id
     ).first()
     if not habit:
-        raise HTTPException(status_code=404, detail="Habot not found")
+        raise HTTPException(status_code=404, detail="Habit not found")
 
     db.delete(habit)
     db.commit()
     return None
+
 
 @router.post("/{habit_id}/logs", response_model=schemas.HabitLogOut, status_code=status.HTTP_201_CREATED)
 def create_habit_log(
@@ -95,22 +101,22 @@ def create_habit_log(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
-
     habit = db.query(models.Habit).filter(
         models.Habit.id == habit_id,
-        models.Habit.use_id == current_user.id
+        models.Habit.user_id == current_user.id
     ).first()
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
 
     log = models.HabitLog(
         **log_in.model_dump(),
-        habit_id=habit.id
+        habit_id=habit_id
     )
     db.add(log)
     db.commit()
     db.refresh(log)
     return log
+
 
 @router.get("/{habit_id}/logs", response_model=List[schemas.HabitLogOut])
 def read_habit_logs(
@@ -130,8 +136,4 @@ def read_habit_logs(
     logs = db.query(models.HabitLog).filter(
         models.HabitLog.habit_id == habit_id
     ).order_by(desc(models.HabitLog.completed_at)).offset(skip).limit(limit).all()
-    return logs    
-
-
-
-
+    return logs
