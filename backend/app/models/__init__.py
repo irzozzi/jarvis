@@ -3,3 +3,6 @@ from .habit import Habit
 from .habit_log import HabitLog
 from .insight import Insight
 from .context import Context
+from .personality import Personality
+from .goal import goal_habits, GoalCategory, Goal
+from .chat import Conversation, Message, MessageRole

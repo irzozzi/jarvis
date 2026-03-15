@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from uuid import UUID
 from typing import List
+from ..services import prediction as prediction_service
+
 
 from .. import schemas, models
 from ..api import deps
@@ -193,3 +195,22 @@ def delete_habit(
     db.delete(habit)
     db.commit()
     return None
+
+@router.get("/{habit_id}/predict")
+def predict_relapse(
+    habit_id: UUID,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """
+    Предсказывает риск срыва для привычки на основе истории и контекста.
+    """
+    habit = db.query(models.Habit).filter(
+        models.Habit.id == habit_id,
+        models.Habit.user_id == current_user.id
+    ).first()
+    if not habit:
+        raise HTTPException(status_code=404, detail="Habit not found")
+
+    result = prediction_service.predict_relapse_risk(db, habit, current_user.id)
+    return result
