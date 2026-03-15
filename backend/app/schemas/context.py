@@ -1,4 +1,4 @@
-from pydantic import Basemodel, ConfigDict
+from pydantic import BaseModel, ConfigDict
 from uuid import UUID
 from datetime import datetime
 from typing import Optional, Any
@@ -20,4 +20,3 @@ class ContextOut(ContextBase):
     weather: Optional[Any] = None
 
     model_config = ConfigDict(from_attributes=True)
-    

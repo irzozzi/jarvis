@@ -1,7 +1,7 @@
 import httpx
 from typing import Optional
 
-async def reverse_geocod(lat: float, lon: float) -> Optional[str]:
+async def reverse_geocode(lat: float, lon: float) -> Optional[str]:
     """
     Определяет тип места по координатам с помощью Nominatim API.
     Возвращает строку: 'home', 'work', 'gym', 'cafe', 'other' или None.  
@@ -14,14 +14,14 @@ async def reverse_geocod(lat: float, lon: float) -> Optional[str]:
         "zoom": 18,
         "addressdetails": 1
     }
-    header ={
+    headers = {
         "User-Agent": "JarvisApp/1.0 (yarulin.g@mail.ru)"
     }
     async with httpx.AsyncClient() as client:
         try: 
             resp = await client.get(url, params=params, headers=headers, timeout=10)
             data = resp.json()
-            if "adderess" in data:
+            if "address" in data:
                 address = data["address"]
                 if "amenity" in address:
                     amenity = address["amenity"].lower()
@@ -33,8 +33,8 @@ async def reverse_geocod(lat: float, lon: float) -> Optional[str]:
                     return "shop"
                 if "office" in address or "company" in address:
                     return "work"
-                if "residentinal" in address or "house" in address:
+                if "residential" in address or "house" in address:
                     return "home"     
             return "other"
         except Exception:
-            return None            
+            return None
