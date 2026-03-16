@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from .. import models 
+from .. import models
 from typing import List, Dict, Any, Optional
 
 def calculate_streak(logs: List[models.HabitLog]) -> int:
@@ -24,7 +24,7 @@ def calculate_streak(logs: List[models.HabitLog]) -> int:
     current_date = today
 
     for log in sorted_logs[1:]:
-        log_date = log.completed_at.dat()
+        log_date = log.completed_at.date()
         if (current_date - log_date).days == 1:
             streak += 1
             current_date = log_date

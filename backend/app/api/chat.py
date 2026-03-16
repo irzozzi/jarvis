@@ -1,11 +1,12 @@
 import logging
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from uuid import UUID
+from jose import JWTError, jwt
+from starlette.concurrency import run_in_threadpool
 
 from ..core.database import SessionLocal
+from ..core.security import SECRET_KEY, ALGORITHM
 from .. import schemas, models
-from ..api import deps
 from ..services import chat_service
 
 # Настройка логгера для этого модуля
@@ -30,10 +31,19 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-def get_db():
+def _authenticate_user(token: str) -> models.User | None:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+        user_uuid = UUID(str(user_id))
+    except (JWTError, ValueError):
+        return None
+
     db = SessionLocal()
     try:
-        yield db
+        return db.query(models.User).filter(models.User.id == user_uuid).first()
     finally:
         db.close()
 
@@ -41,12 +51,10 @@ def get_db():
 async def websocket_endpoint(
     websocket: WebSocket,
     token: str,
-    db: Session = Depends(get_db)
 ):
     # Аутентификация по токену
-    try:
-        user = await deps.get_current_user(token=token, db=db)
-    except Exception:
+    user = await run_in_threadpool(_authenticate_user, token)
+    if not user:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
@@ -55,7 +63,7 @@ async def websocket_endpoint(
         while True:
             data = await websocket.receive_text()
             # Обработка входящего сообщения
-            response = await chat_service.process_message(user.id, data, db)
+            response = await run_in_threadpool(chat_service.process_message, user.id, data)
             await manager.send_message(response, user.id)
     except WebSocketDisconnect:
         manager.disconnect(user.id)
