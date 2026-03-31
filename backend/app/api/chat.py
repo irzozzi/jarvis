@@ -9,7 +9,6 @@ from ..core.security import SECRET_KEY, ALGORITHM
 from .. import schemas, models
 from ..services import chat_service
 
-# Настройка логгера для этого модуля
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
@@ -52,7 +51,6 @@ async def websocket_endpoint(
     websocket: WebSocket,
     token: str,
 ):
-    # Аутентификация по токену
     user = await run_in_threadpool(_authenticate_user, token)
     if not user:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -62,12 +60,11 @@ async def websocket_endpoint(
     try:
         while True:
             data = await websocket.receive_text()
-            # Обработка входящего сообщения
-            response = await run_in_threadpool(chat_service.process_message, user.id, data)
+            # Вызываем асинхронную функцию напрямую
+            response = await chat_service.process_message(user.id, data)
             await manager.send_message(response, user.id)
     except WebSocketDisconnect:
         manager.disconnect(user.id)
     except Exception as e:
-        # Логируем ошибку с помощью настроенного логгера
         logger.error(f"WebSocket error for user {user.id}: {e}")
         manager.disconnect(user.id)

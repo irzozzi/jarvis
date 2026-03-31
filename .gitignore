@@ -17,3 +17,7 @@ backend/.env
 # Editor / IDE
 .vscode/
 
+# Alembic cache
+alembic/__pycache__/
+alembic/versions/__pycache__/
+alembic/*.pyc
