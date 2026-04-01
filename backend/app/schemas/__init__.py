@@ -8,3 +8,4 @@ from .personality import PersonalityCreate, PersonalityOut
 from .goal import GoalCreate, GoalUpdate, GoalOut, GoalCategoryCreate, GoalCategoryOut
 from .chat import MessageCreate, MessageOut, ConversationCreate, ConversationOut, MessageRole
 from .event import EventCreate, EventUpdate, EventOut
+from .chart import ChartPoint, HabitChartData, GoalProgressData

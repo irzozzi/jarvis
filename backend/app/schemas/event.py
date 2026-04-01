@@ -1,7 +1,7 @@
-from pydantic import BaseModel, ConfigDict 
+from pydantic import BaseModel, ConfigDict, field_validator
 from uuid import UUID
-from datetime import datetime
-from typing import Optional, Any 
+from datetime import datetime, timezone
+from typing import Optional, Any
 
 class EventBase(BaseModel):
     habit_id: Optional[UUID] = None
@@ -13,7 +13,13 @@ class EventBase(BaseModel):
     status: Optional[str] = "planned"
 
 class EventCreate(EventBase):
-    pass
+    @field_validator('start_time', 'end_time')
+    def convert_to_utc(cls, v: datetime) -> datetime:
+        # Если время наивное (без часового пояса), считаем его UTC
+        if v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        # Если есть часовой пояс, преобразуем в UTC
+        return v.astimezone(timezone.utc).replace(tzinfo=None)
 
 class EventUpdate(BaseModel):
     title: Optional[str] = None
@@ -27,5 +33,5 @@ class EventOut(EventBase):
     id: UUID
     user_id: UUID
     created_at: datetime
-    updated_at: datetime 
+    updated_at: datetime
     model_config = ConfigDict(from_attributes=True)

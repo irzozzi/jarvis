@@ -2,10 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import List
+from datetime import datetime
 
 from .. import schemas, models
 from ..api import deps
 from ..services import goal_analyzer
+from ..services import charts as charts_service
+from ..schemas import ChartPoint
 
 router = APIRouter(prefix="/goals", tags=["goals"])
 
@@ -16,20 +19,14 @@ def create_goal(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
-    """
-    Создаёт новую цель. Если передан custom_text, анализирует его для определения категории.
-    """
     category_id = goal_in.category_id
-
     if goal_in.custom_text and not category_id:
         analysis = goal_analyzer.analyze_custom_text(goal_in.custom_text)
-        # Используем ilike для регистронезависимого поиска
         cat = db.query(models.GoalCategory).filter(
             models.GoalCategory.name.ilike(analysis["category"])
         ).first()
         if cat:
             category_id = cat.id
-
     goal = models.Goal(
         user_id=current_user.id,
         category_id=category_id,
@@ -51,11 +48,9 @@ def read_goals(
     skip: int = 0,
     limit: int = 100,
 ):
-    """
-    Список целей пользователя.
-    """
     goals = db.query(models.Goal).filter(
-        models.Goal.user_id == current_user.id
+        models.Goal.user_id == current_user.id,
+        models.Goal.deleted_at == None
     ).order_by(models.Goal.created_at.desc()).offset(skip).limit(limit).all()
     return goals
 
@@ -66,12 +61,10 @@ def read_goal(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
-    """
-    Детали цели.
-    """
     goal = db.query(models.Goal).filter(
         models.Goal.id == goal_id,
-        models.Goal.user_id == current_user.id
+        models.Goal.user_id == current_user.id,
+        models.Goal.deleted_at == None
     ).first()
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
@@ -85,19 +78,15 @@ def update_goal(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
-    """
-    Обновление цели.
-    """
     goal = db.query(models.Goal).filter(
         models.Goal.id == goal_id,
-        models.Goal.user_id == current_user.id
+        models.Goal.user_id == current_user.id,
+        models.Goal.deleted_at == None
     ).first()
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
-
     for field, value in goal_in.model_dump(exclude_unset=True).items():
         setattr(goal, field, value)
-
     db.commit()
     db.refresh(goal)
     return goal
@@ -109,18 +98,38 @@ def delete_goal(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
-    """
-    Удаление цели.
-    """
     goal = db.query(models.Goal).filter(
         models.Goal.id == goal_id,
-        models.Goal.user_id == current_user.id
+        models.Goal.user_id == current_user.id,
+        models.Goal.deleted_at == None
     ).first()
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
-    db.delete(goal)
+    goal.deleted_at = datetime.utcnow()
     db.commit()
     return None
+
+
+@router.patch("/{goal_id}/restore", response_model=schemas.GoalOut)
+def restore_goal(
+    goal_id: UUID,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """
+    Восстанавливает мягко удалённую цель (устанавливает deleted_at = None).
+    """
+    goal = db.query(models.Goal).filter(
+        models.Goal.id == goal_id,
+        models.Goal.user_id == current_user.id,
+        models.Goal.deleted_at != None
+    ).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Deleted goal not found")
+    goal.deleted_at = None
+    db.commit()
+    db.refresh(goal)
+    return goal
 
 
 @router.post("/{goal_id}/habits/{habit_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -130,26 +139,20 @@ def add_habit_to_goal(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
-    """
-    Привязывает привычку к цели.
-    """
-    # Проверяем, что цель принадлежит пользователю
     goal = db.query(models.Goal).filter(
         models.Goal.id == goal_id,
-        models.Goal.user_id == current_user.id
+        models.Goal.user_id == current_user.id,
+        models.Goal.deleted_at == None
     ).first()
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
-
-    # Проверяем, что привычка принадлежит пользователю
     habit = db.query(models.Habit).filter(
         models.Habit.id == habit_id,
-        models.Habit.user_id == current_user.id
+        models.Habit.user_id == current_user.id,
+        models.Habit.deleted_at == None
     ).first()
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
-
-    # Проверяем, не привязана ли уже
     stmt = models.goal_habits.select().where(
         models.goal_habits.c.goal_id == goal_id,
         models.goal_habits.c.habit_id == habit_id
@@ -157,8 +160,6 @@ def add_habit_to_goal(
     exists = db.execute(stmt).first()
     if exists:
         raise HTTPException(status_code=400, detail="Habit already linked to this goal")
-
-    # Добавляем связь
     ins = models.goal_habits.insert().values(goal_id=goal_id, habit_id=habit_id)
     db.execute(ins)
     db.commit()
@@ -172,18 +173,13 @@ def remove_habit_from_goal(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
-    """
-    Убирает привычку из цели.
-    """
-    # Проверяем, что цель принадлежит пользователю
     goal = db.query(models.Goal).filter(
         models.Goal.id == goal_id,
-        models.Goal.user_id == current_user.id
+        models.Goal.user_id == current_user.id,
+        models.Goal.deleted_at == None
     ).first()
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
-
-    # Удаляем связь
     stmt = models.goal_habits.delete().where(
         models.goal_habits.c.goal_id == goal_id,
         models.goal_habits.c.habit_id == habit_id
@@ -193,3 +189,14 @@ def remove_habit_from_goal(
     if result.rowcount == 0:
         raise HTTPException(status_code=404, detail="Habit not linked to this goal")
     return None
+
+
+@router.get("/chart/{goal_id}", response_model=List[ChartPoint])
+def get_goal_chart(
+    goal_id: UUID,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+    days: int = 90,
+):
+    points = charts_service.get_goal_progress_chart(db, current_user.id, str(goal_id), days)
+    return [{"date": p[0], "value": p[1]} for p in points]

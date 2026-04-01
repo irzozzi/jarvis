@@ -10,8 +10,9 @@ from ..core.database import SessionLocal
 from .llm_service import ask_yandex_gpt
 from . import stats as stats_service
 from . import intent_classifier
-from ..utils.date_parser import parse_datetime
 from .event_service import create_event_from_request
+from .date_extractor import extract_event_data
+from .habit_schedule_extractor import extract_habit_schedule
 
 load_dotenv()
 MAX_HISTORY = int(os.getenv("MAX_HISTORY", 20))
@@ -61,7 +62,7 @@ async def process_message(user_id: UUID, message: str) -> str:
                 models.HabitLog.habit_id == habit.id
             ).all()
             streak = stats_service.calculate_streak(logs)
-            rate_7d = stats_service.calculate_completion_rate(logs, 7, habit.schedule)
+            rate_7d = stats_service.calculate_completion_rate(logs, 7, habit.schedule, habit.created_at)
             habit_lines.append(
                 f"- {habit.name} (цель: {habit.target} {habit.unit or ''}, "
                 f"серия: {streak} дней, выполнение за 7 дней: {rate_7d}%)"
@@ -101,25 +102,76 @@ async def process_message(user_id: UUID, message: str) -> str:
 
         response = await ask_yandex_gpt(prompt)
 
-        # Обработка планирования
+        # Обработка планирования (события)
         intent, _ = intent_classifier.classify_intent(message)
         if intent == "planning":
-            parsed = parse_datetime(message)
-            if parsed:
-                start_time, end_time = parsed
-                title = "Запланированное событие"
-                match = re.search(r'(?i)(запланируй|создай событие|напомни|добавь в календарь)\s+(.+?)\s+(?:на|в|сегодня|завтра)', message)
-                if match:
-                    title = match.group(2).strip()
+            extraction = await extract_event_data(message)
+            if extraction["status"] == "success":
+                data = extraction["data"]
                 event = create_event_from_request(
                     db=db,
                     user_id=user_id,
-                    title=title,
-                    start_time=start_time,
-                    end_time=end_time,
+                    title=data["title"],
+                    start_time=data["start_time"],
+                    end_time=data["end_time"],
                     description=message
                 )
-                response += f"\n\n Я создал событие: «{event.title}» на {event.start_time.strftime('%d.%m.%Y %H:%M')}."
+                response += f"\n\nЯ создал событие: «{event.title}» на {event.start_time.strftime('%d.%m.%Y %H:%M')}."
+            elif extraction["status"] == "missing_date":
+                response += f"\n\nЯ понял, что вы хотите запланировать «{extraction['title']}», но не указали дату. Пожалуйста, укажите дату (например, «завтра», «через два дня»)."
+            elif extraction["status"] == "missing_time":
+                response += f"\n\nЯ понял, что вы хотите запланировать «{extraction['title']}» на {extraction['date']}, но не указали время. Пожалуйста, добавьте время (например, «в 10:00»)."
+            elif extraction["status"] == "missing_both":
+                response += "\n\nЧтобы я мог запланировать событие, нужно указать название, дату и время. Например: «запланируй встречу на завтра в 15:00»."
+            else:
+                response += "\n\nНе удалось понять ваш запрос. Попробуйте, например: «запланируй встречу на завтра в 15:00»."
+
+        # Создание привычки через AI
+        if conversation.pending_schedule:
+            # Если пользователь подтверждает
+            if re.search(r'\b(да|хочу|создай|ок|хорошо|конечно)\b', message, re.IGNORECASE):
+                try:
+                    create_msg = db.query(models.Message).filter(
+                        models.Message.conversation_id == conversation.id,
+                        models.Message.role == models.MessageRole.USER,
+                        models.Message.content.ilike('%создай привычку%')
+                    ).order_by(models.Message.created_at.desc()).first()
+                    if not create_msg:
+                        response += "\n\nНе удалось определить название привычки. Попробуйте ещё раз."
+                    else:
+                        title = "Новая привычка"
+                        match = re.search(r'(?:создай|добавь|заведи)\s+привычку\s+(.+?)\s+(?:каждые|каждый|по|на)', create_msg.content, re.IGNORECASE)
+                        if match:
+                            title = match.group(1).strip()
+                        new_habit = models.Habit(
+                            user_id=user_id,
+                            name=title,
+                            type="boolean",
+                            target=1,
+                            schedule=conversation.pending_schedule,
+                            is_active=True
+                        )
+                        db.add(new_habit)
+                        db.commit()
+                        response += f"\n\nПривычка «{title}» создана с расписанием: {conversation.pending_schedule}"
+                        conversation.pending_schedule = None
+                        db.commit()
+                except Exception as e:
+                    response += f"\n\nОшибка при создании привычки: {e}"
+            else:
+                response += "\n\nХорошо, отменяем создание привычки."
+                conversation.pending_schedule = None
+                db.commit()
+        else:
+            # Если нет ожидающего подтверждения, проверяем команду на создание
+            if re.search(r'(создай|добавь|заведи)\s+привычку', message, re.IGNORECASE):
+                schedule = await extract_habit_schedule(message)
+                if schedule:
+                    conversation.pending_schedule = schedule
+                    db.commit()
+                    response += f"\n\nЯ распознал расписание: {schedule}. Создать привычку с таким расписанием?"
+                else:
+                    response += "\n\nЯ понял, что вы хотите создать привычку, но не смог определить расписание. Уточните, например: «каждые 2 дня», «по понедельникам»."
 
         # Сохраняем сообщения
         user_msg = models.Message(
