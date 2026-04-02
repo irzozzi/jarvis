@@ -13,10 +13,17 @@ class PersonalityCreate(BaseModel):
 class PersonalityOut(BaseModel):
     id: UUID
     user_id: UUID
-    type: Optional[str] = None
     answers: Optional[List[Dict[str, Any]]] = None
+    openness: Optional[float] = None
+    conscientiousness: Optional[float] = None
+    extraversion: Optional[float] = None
+    agreeableness: Optional[float] = None
+    neuroticism: Optional[float] = None
     created_at: datetime
     updated_at: datetime
-
     model_config = ConfigDict(from_attributes=True)
 
+class QuestionOut(BaseModel):
+    id: int
+    text: str
+    # factor и direction не обязательны для клиента, но можно вернуть и их, если нужно

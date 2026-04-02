@@ -1,0 +1,17 @@
+QUESTIONS = [
+    {"id": 1, "text": "Мне нравится пробовать новые идеи и экспериментировать.", "factor": "openness", "direction": 1},
+    {"id": 2, "text": "Я предпочитаю привычные вещи новым.", "factor": "openness", "direction": -1},
+    {"id": 3, "text": "Я люблю знакомиться с разными культурами и традициями.", "factor": "openness", "direction": 1},
+    {"id": 4, "text": "Я всегда довожу начатое до конца.", "factor": "conscientiousness", "direction": 1},
+    {"id": 5, "text": "Мне трудно заставить себя делать то, что неинтересно.", "factor": "conscientiousness", "direction": -1},
+    {"id": 6, "text": "Я планирую свои дела заранее.", "factor": "conscientiousness", "direction": 1},
+    {"id": 7, "text": "Мне нравится быть в центре внимания.", "factor": "extraversion", "direction": 1},
+    {"id": 8, "text": "Я предпочитаю проводить время в одиночестве.", "factor": "extraversion", "direction": -1},
+    {"id": 9, "text": "Я легко завожу новые знакомства.", "factor": "extraversion", "direction": 1},
+    {"id": 10, "text": "Я легко сочувствую другим.", "factor": "agreeableness", "direction": 1},
+    {"id": 11, "text": "Я часто спорю и отстаиваю свою точку зрения.", "factor": "agreeableness", "direction": -1},
+    {"id": 12, "text": "Я стараюсь избегать конфликтов.", "factor": "agreeableness", "direction": 1},
+    {"id": 13, "text": "Я часто тревожусь по пустякам.", "factor": "neuroticism", "direction": 1},
+    {"id": 14, "text": "Я спокойно отношусь к стрессовым ситуациям.", "factor": "neuroticism", "direction": -1},
+    {"id": 15, "text": "Я легко расстраиваюсь из-за неудач.", "factor": "neuroticism", "direction": 1},
+] 

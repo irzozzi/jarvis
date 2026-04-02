@@ -21,9 +21,19 @@ async def process_message(user_id: UUID, message: str) -> str:
     db = SessionLocal()
     try:
         user = db.query(models.User).filter(models.User.id == user_id).first()
-        personality = db.query(models.Personality).filter(
+        # Получаем данные OCEAN
+        ocean_data = db.query(models.Personality).filter(
             models.Personality.user_id == user_id
         ).first()
+        ocean_text = "не определён"
+        if ocean_data:
+            ocean_text = (
+                f"Открытость: {ocean_data.openness:.0f}%, "
+                f"Добросовестность: {ocean_data.conscientiousness:.0f}%, "
+                f"Экстраверсия: {ocean_data.extraversion:.0f}%, "
+                f"Доброжелательность: {ocean_data.agreeableness:.0f}%, "
+                f"Нейротизм: {ocean_data.neuroticism:.0f}%"
+            )
 
         conversation = db.query(models.Conversation).filter(
             models.Conversation.user_id == user_id
@@ -50,7 +60,6 @@ async def process_message(user_id: UUID, message: str) -> str:
         context = "\n".join(history_lines)
 
         user_name = user.email.split('@')[0]
-        user_psychotype = personality.type if personality else "не определён"
 
         habits = db.query(models.Habit).filter(
             models.Habit.user_id == user_id,
@@ -62,6 +71,7 @@ async def process_message(user_id: UUID, message: str) -> str:
                 models.HabitLog.habit_id == habit.id
             ).all()
             streak = stats_service.calculate_streak(logs)
+            # Если в вашей stats_service calculate_completion_rate не принимает habit_created_at, уберите последний аргумент
             rate_7d = stats_service.calculate_completion_rate(logs, 7, habit.schedule, habit.created_at)
             habit_lines.append(
                 f"- {habit.name} (цель: {habit.target} {habit.unit or ''}, "
@@ -83,7 +93,7 @@ async def process_message(user_id: UUID, message: str) -> str:
 
         prompt = f"""Ты — Джарвис, персональный AI-ассистент по формированию привычек.
 Пользователь: {user_name}
-Психотип: {user_psychotype}
+OCEAN профиль: {ocean_text}
 
 Данные пользователя:
 Привычки:
@@ -98,7 +108,7 @@ async def process_message(user_id: UUID, message: str) -> str:
 История диалога:
 {context}
 
-Ответь кратко, по делу, поддерживающе. Учитывай психотип пользователя."""
+Ответь кратко, по делу, поддерживающе. Учитывай личность пользователя (особенно высокие или низкие значения факторов)."""
 
         response = await ask_yandex_gpt(prompt)
 
@@ -128,7 +138,7 @@ async def process_message(user_id: UUID, message: str) -> str:
 
         # Создание привычки через AI
         if conversation.pending_schedule:
-            # Если пользователь подтверждает
+            # Если есть ожидающее подтверждение
             if re.search(r'\b(да|хочу|создай|ок|хорошо|конечно)\b', message, re.IGNORECASE):
                 try:
                     create_msg = db.query(models.Message).filter(
