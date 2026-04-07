@@ -85,8 +85,19 @@ def update_goal(
     ).first()
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
+    
+    old_progress = goal.progress
     for field, value in goal_in.model_dump(exclude_unset=True).items():
         setattr(goal, field, value)
+    
+    # Если прогресс изменился, добавляем запись в лог
+    if goal.progress != old_progress:
+        log_entry = models.GoalProgressLog(
+            goal_id=goal.id,
+            progress=goal.progress
+        )
+        db.add(log_entry)
+    
     db.commit()
     db.refresh(goal)
     return goal
@@ -200,3 +211,25 @@ def get_goal_chart(
 ):
     points = charts_service.get_goal_progress_chart(db, current_user.id, str(goal_id), days)
     return [{"date": p[0], "value": p[1]} for p in points]
+
+
+@router.get("/{goal_id}/history")
+def get_goal_history(
+    goal_id: UUID,
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+):
+    """
+    Возвращает историю изменения прогресса цели.
+    """
+    goal = db.query(models.Goal).filter(
+        models.Goal.id == goal_id,
+        models.Goal.user_id == current_user.id,
+        models.Goal.deleted_at == None
+    ).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    history = db.query(models.GoalProgressLog).filter(
+        models.GoalProgressLog.goal_id == goal_id
+    ).order_by(models.GoalProgressLog.created_at).all()
+    return [{"date": h.created_at.isoformat(), "progress": h.progress} for h in history]

@@ -25,5 +25,8 @@ class UserOut(UserBase):
     id: UUID
     is_active: bool
     created_at: datetime
-
     model_config = ConfigDict(from_attributes=True)
+
+class PasswordChange(BaseModel):
+    old_password: str
+    new_password: str

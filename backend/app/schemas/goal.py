@@ -31,6 +31,7 @@ class GoalUpdate(GoalBase):
     category_id: Optional[UUID] = None
     target_date: Optional[datetime] = None
     status: Optional[str] = None
+    progress: Optional[float] = None
 
 class GoalOut(GoalBase):
     id: UUID

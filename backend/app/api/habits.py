@@ -1,15 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from uuid import UUID
-from typing import List
-from datetime import datetime
+from typing import List, Optional
+from datetime import datetime, date, timedelta
 
 from .. import schemas, models
 from ..api import deps
 from ..services import stats as stats_service
 from ..services import prediction as prediction_service
 from ..services import charts as charts_service
+from ..services.context_stats_service import get_context_stats
+
 
 def validate_schedule(schedule: dict | None) -> None:
     if schedule is None:
@@ -34,7 +36,6 @@ def validate_schedule(schedule: dict | None) -> None:
     elif rec_type == "custom_dates":
         if "dates" not in schedule or not isinstance(schedule["dates"], list):
             raise HTTPException(status_code=400, detail="Invalid schedule: 'custom_dates' requires 'dates' list")
-        # проверяем каждую дату на формат YYYY-MM-DD
         for date_str in schedule["dates"]:
             try:
                 datetime.strptime(date_str, "%Y-%m-%d")
@@ -42,6 +43,7 @@ def validate_schedule(schedule: dict | None) -> None:
                 raise HTTPException(status_code=400, detail=f"Invalid date format: '{date_str}'. Expected YYYY-MM-DD")
     else:
         raise HTTPException(status_code=400, detail=f"Invalid schedule: unknown type '{rec_type}'")
+
 
 router = APIRouter(prefix="/habits", tags=["habits"])
 
@@ -61,11 +63,77 @@ def get_habits_chart(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
     days: int = 30,
+    group_by: str = "day",
 ):
-    data = charts_service.get_habit_chart_data_for_user(db, current_user.id, days)
+    data = charts_service.get_habit_chart_data_for_user(db, current_user.id, days, group_by)
     return data
 
 
+@router.get("/heatmap")
+def get_heatmap(
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+    year: int = datetime.utcnow().year,
+):
+    """
+    Возвращает тепловую карту выполнения привычек за указанный год.
+    """
+    start_date = date(year, 1, 1)
+    end_date = date(year, 12, 31)
+    heatmap = {}
+    current = start_date
+    while current <= end_date:
+        heatmap[current] = 0
+        current += timedelta(days=1)
+    
+    logs = db.query(models.HabitLog).join(models.Habit).filter(
+        models.Habit.user_id == current_user.id,
+        models.HabitLog.completed_at >= start_date,
+        models.HabitLog.completed_at <= end_date,
+        models.Habit.deleted_at == None
+    ).all()
+
+    for log in logs:
+        log_date = log.completed_at.date()
+        if log_date in heatmap:
+            heatmap[log_date] += 1
+
+    max_count = max(heatmap.values()) if heatmap else 1
+    result = []
+    for d, count in sorted(heatmap.items()):
+        intensity = round((count / max_count) * 100) if max_count > 0 else 0
+        result.append({"date": d.isoformat(), "intensity": intensity})
+    return result
+
+
+@router.get("/context-stats")
+def get_habit_context_stats(
+    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(deps.get_current_user),
+    days: int = Query(30, ge=1, le=365, description="Количество дней для анализа"),
+    start_date: Optional[datetime] = Query(None, description="Начало периода (YYYY-MM-DD)"),
+    end_date: Optional[datetime] = Query(None, description="Конец периода"),
+):
+    """
+    Возвращает статистику выполнения привычек в разрезе:
+    - тип локации (home, work, gym и т.д.)
+    - активность (walking, sitting, running)
+    - время суток (morning, afternoon, evening, night)
+    - погода (clear, rain, snow и т.д. из weather.main)
+    """
+    if start_date and not end_date:
+        end_date = datetime.utcnow()
+    if end_date and not start_date:
+        start_date = end_date - timedelta(days=days)
+    if not start_date and not end_date:
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
+
+    stats = get_context_stats(db, current_user.id, start_date, end_date)
+    return stats
+
+
+# ---------- Маршруты для списка привычек ----------
 @router.get("/", response_model=List[schemas.HabitOut])
 def read_habits(
     db: Session = Depends(deps.get_db),

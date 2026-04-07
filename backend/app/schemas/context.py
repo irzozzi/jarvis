@@ -8,6 +8,8 @@ class ContextBase(BaseModel):
     longitude: Optional[float] = None
     activity: Optional[str] = None
     raw_data: Optional[Any] = None
+    location_type: Optional[str] = None   # <-- добавить
+    weather: Optional[Any] = None         # <-- добавить
 
 class ContextCreate(ContextBase):
     timestamp: Optional[datetime] = None
@@ -15,8 +17,6 @@ class ContextCreate(ContextBase):
 class ContextOut(ContextBase):
     id: UUID
     user_id: UUID
-    timestamp: datetime     
-    location_type: Optional[str] = None
-    weather: Optional[Any] = None
+    timestamp: datetime
 
     model_config = ConfigDict(from_attributes=True)

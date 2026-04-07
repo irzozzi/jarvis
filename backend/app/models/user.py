@@ -13,4 +13,8 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-
+    is_verified = Column(Boolean, default=False)
+    verification_token = Column(String, nullable=True, unique=True, index=True)
+    reset_password_token = Column(String, nullable=True, unique=True, index=True)
+    reset_password_expires = Column(DateTime, nullable=True)
+    
