@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from uuid import UUID
@@ -11,17 +11,15 @@ from ..services import stats as stats_service
 from ..services import prediction as prediction_service
 from ..services import charts as charts_service
 from ..services.context_stats_service import get_context_stats
-
+from ..core.cache import cache, invalidate_pattern
 
 def validate_schedule(schedule: dict | None) -> None:
     if schedule is None:
         return
-    # старый формат: {"days": [1,3,5]}
     if "days" in schedule:
         if not isinstance(schedule["days"], list) or not all(isinstance(d, int) for d in schedule["days"]):
             raise HTTPException(status_code=400, detail="Invalid schedule: 'days' must be a list of integers")
         return
-    # новый формат
     if "type" not in schedule:
         raise HTTPException(status_code=400, detail="Invalid schedule: missing 'type'")
     rec_type = schedule["type"]
@@ -44,22 +42,23 @@ def validate_schedule(schedule: dict | None) -> None:
     else:
         raise HTTPException(status_code=400, detail=f"Invalid schedule: unknown type '{rec_type}'")
 
-
 router = APIRouter(prefix="/habits", tags=["habits"])
-
 
 # ---------- Статические маршруты ----------
 @router.get("/stats")
+@cache(ttl=300)
 def get_overall_stats(
+    request: Request,   # <-- добавлен
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
     stats = stats_service.get_overall_stats(db, current_user.id)
     return stats
 
-
 @router.get("/chart")
+@cache(ttl=300)
 def get_habits_chart(
+    request: Request,   # <-- добавлен
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
     days: int = 30,
@@ -68,16 +67,12 @@ def get_habits_chart(
     data = charts_service.get_habit_chart_data_for_user(db, current_user.id, days, group_by)
     return data
 
-
 @router.get("/heatmap")
 def get_heatmap(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
     year: int = datetime.utcnow().year,
 ):
-    """
-    Возвращает тепловую карту выполнения привычек за указанный год.
-    """
     start_date = date(year, 1, 1)
     end_date = date(year, 12, 31)
     heatmap = {}
@@ -85,19 +80,16 @@ def get_heatmap(
     while current <= end_date:
         heatmap[current] = 0
         current += timedelta(days=1)
-    
     logs = db.query(models.HabitLog).join(models.Habit).filter(
         models.Habit.user_id == current_user.id,
         models.HabitLog.completed_at >= start_date,
         models.HabitLog.completed_at <= end_date,
         models.Habit.deleted_at == None
     ).all()
-
     for log in logs:
         log_date = log.completed_at.date()
         if log_date in heatmap:
             heatmap[log_date] += 1
-
     max_count = max(heatmap.values()) if heatmap else 1
     result = []
     for d, count in sorted(heatmap.items()):
@@ -105,22 +97,16 @@ def get_heatmap(
         result.append({"date": d.isoformat(), "intensity": intensity})
     return result
 
-
 @router.get("/context-stats")
+@cache(ttl=300)
 def get_habit_context_stats(
+    request: Request,   # <-- добавлен
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
     days: int = Query(30, ge=1, le=365, description="Количество дней для анализа"),
     start_date: Optional[datetime] = Query(None, description="Начало периода (YYYY-MM-DD)"),
     end_date: Optional[datetime] = Query(None, description="Конец периода"),
 ):
-    """
-    Возвращает статистику выполнения привычек в разрезе:
-    - тип локации (home, work, gym и т.д.)
-    - активность (walking, sitting, running)
-    - время суток (morning, afternoon, evening, night)
-    - погода (clear, rain, snow и т.д. из weather.main)
-    """
     if start_date and not end_date:
         end_date = datetime.utcnow()
     if end_date and not start_date:
@@ -128,10 +114,8 @@ def get_habit_context_stats(
     if not start_date and not end_date:
         end_date = datetime.utcnow()
         start_date = end_date - timedelta(days=days)
-
     stats = get_context_stats(db, current_user.id, start_date, end_date)
     return stats
-
 
 # ---------- Маршруты для списка привычек ----------
 @router.get("/", response_model=List[schemas.HabitOut])
@@ -147,7 +131,6 @@ def read_habits(
     ).offset(skip).limit(limit).all()
     return habits
 
-
 @router.post("/", response_model=schemas.HabitOut, status_code=status.HTTP_201_CREATED)
 def create_habit(
     habit_in: schemas.HabitCreate,
@@ -162,8 +145,8 @@ def create_habit(
     db.add(habit)
     db.commit()
     db.refresh(habit)
+    invalidate_pattern("/habits/*")   # <-- инвалидация
     return habit
-
 
 # ---------- Маршруты с параметрами ----------
 @router.get("/{habit_id}/stats")
@@ -181,7 +164,6 @@ def get_habit_stats(
         raise HTTPException(status_code=404, detail="Habit not found")
     stats = stats_service.get_habit_stats(db, habit)
     return stats
-
 
 @router.get("/{habit_id}/logs", response_model=List[schemas.HabitLogOut])
 def read_habit_logs(
@@ -202,7 +184,6 @@ def read_habit_logs(
         models.HabitLog.habit_id == habit_id
     ).order_by(desc(models.HabitLog.completed_at)).offset(skip).limit(limit).all()
     return logs
-
 
 @router.post("/{habit_id}/logs", response_model=schemas.HabitLogOut, status_code=status.HTTP_201_CREATED)
 def create_habit_log(
@@ -225,8 +206,8 @@ def create_habit_log(
     db.add(log)
     db.commit()
     db.refresh(log)
+    invalidate_pattern("/habits/*")   # <-- инвалидация
     return log
-
 
 @router.get("/{habit_id}", response_model=schemas.HabitOut)
 def read_habit(
@@ -242,7 +223,6 @@ def read_habit(
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
     return habit
-
 
 @router.put("/{habit_id}", response_model=schemas.HabitOut)
 def update_habit(
@@ -262,8 +242,8 @@ def update_habit(
         setattr(habit, field, value)
     db.commit()
     db.refresh(habit)
+    invalidate_pattern("/habits/*")   # <-- инвалидация
     return habit
-
 
 @router.delete("/{habit_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_habit(
@@ -280,8 +260,8 @@ def delete_habit(
         raise HTTPException(status_code=404, detail="Habit not found")
     habit.deleted_at = datetime.utcnow()
     db.commit()
+    invalidate_pattern("/habits/*")   # <-- инвалидация
     return None
-
 
 @router.patch("/{habit_id}/restore", response_model=schemas.HabitOut)
 def restore_habit(
@@ -289,9 +269,6 @@ def restore_habit(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
-    """
-    Восстанавливает мягко удалённую привычку (устанавливает deleted_at = None).
-    """
     habit = db.query(models.Habit).filter(
         models.Habit.id == habit_id,
         models.Habit.user_id == current_user.id,
@@ -302,8 +279,8 @@ def restore_habit(
     habit.deleted_at = None
     db.commit()
     db.refresh(habit)
+    invalidate_pattern("/habits/*")   # <-- инвалидация
     return habit
-
 
 @router.get("/{habit_id}/predict")
 def predict_relapse(
