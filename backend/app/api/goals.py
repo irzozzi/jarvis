@@ -85,19 +85,15 @@ def update_goal(
     ).first()
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
-    
     old_progress = goal.progress
     for field, value in goal_in.model_dump(exclude_unset=True).items():
         setattr(goal, field, value)
-    
-    # Если прогресс изменился, добавляем запись в лог
     if goal.progress != old_progress:
         log_entry = models.GoalProgressLog(
             goal_id=goal.id,
             progress=goal.progress
         )
         db.add(log_entry)
-    
     db.commit()
     db.refresh(goal)
     return goal
@@ -127,9 +123,6 @@ def restore_goal(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
-    """
-    Восстанавливает мягко удалённую цель (устанавливает deleted_at = None).
-    """
     goal = db.query(models.Goal).filter(
         models.Goal.id == goal_id,
         models.Goal.user_id == current_user.id,
@@ -219,9 +212,6 @@ def get_goal_history(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
-    """
-    Возвращает историю изменения прогресса цели.
-    """
     goal = db.query(models.Goal).filter(
         models.Goal.id == goal_id,
         models.Goal.user_id == current_user.id,
@@ -233,3 +223,5 @@ def get_goal_history(
         models.GoalProgressLog.goal_id == goal_id
     ).order_by(models.GoalProgressLog.created_at).all()
     return [{"date": h.created_at.isoformat(), "progress": h.progress} for h in history]
+
+

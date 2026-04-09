@@ -13,6 +13,7 @@ from ..services import charts as charts_service
 from ..services.context_stats_service import get_context_stats
 from ..core.cache import cache, invalidate_pattern
 
+
 def validate_schedule(schedule: dict | None) -> None:
     if schedule is None:
         return
@@ -42,23 +43,26 @@ def validate_schedule(schedule: dict | None) -> None:
     else:
         raise HTTPException(status_code=400, detail=f"Invalid schedule: unknown type '{rec_type}'")
 
+
 router = APIRouter(prefix="/habits", tags=["habits"])
+
 
 # ---------- Статические маршруты ----------
 @router.get("/stats")
 @cache(ttl=300)
 def get_overall_stats(
-    request: Request,   # <-- добавлен
+    request: Request,
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
 ):
     stats = stats_service.get_overall_stats(db, current_user.id)
     return stats
 
+
 @router.get("/chart")
 @cache(ttl=300)
 def get_habits_chart(
-    request: Request,   # <-- добавлен
+    request: Request,
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
     days: int = 30,
@@ -66,6 +70,7 @@ def get_habits_chart(
 ):
     data = charts_service.get_habit_chart_data_for_user(db, current_user.id, days, group_by)
     return data
+
 
 @router.get("/heatmap")
 def get_heatmap(
@@ -97,10 +102,11 @@ def get_heatmap(
         result.append({"date": d.isoformat(), "intensity": intensity})
     return result
 
+
 @router.get("/context-stats")
 @cache(ttl=300)
 def get_habit_context_stats(
-    request: Request,   # <-- добавлен
+    request: Request,
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_user),
     days: int = Query(30, ge=1, le=365, description="Количество дней для анализа"),
@@ -117,6 +123,7 @@ def get_habit_context_stats(
     stats = get_context_stats(db, current_user.id, start_date, end_date)
     return stats
 
+
 # ---------- Маршруты для списка привычек ----------
 @router.get("/", response_model=List[schemas.HabitOut])
 def read_habits(
@@ -130,6 +137,7 @@ def read_habits(
         models.Habit.deleted_at == None
     ).offset(skip).limit(limit).all()
     return habits
+
 
 @router.post("/", response_model=schemas.HabitOut, status_code=status.HTTP_201_CREATED)
 def create_habit(
@@ -145,8 +153,9 @@ def create_habit(
     db.add(habit)
     db.commit()
     db.refresh(habit)
-    invalidate_pattern("/habits/*")   # <-- инвалидация
+    invalidate_pattern("/habits/*")
     return habit
+
 
 # ---------- Маршруты с параметрами ----------
 @router.get("/{habit_id}/stats")
@@ -164,6 +173,7 @@ def get_habit_stats(
         raise HTTPException(status_code=404, detail="Habit not found")
     stats = stats_service.get_habit_stats(db, habit)
     return stats
+
 
 @router.get("/{habit_id}/logs", response_model=List[schemas.HabitLogOut])
 def read_habit_logs(
@@ -184,6 +194,7 @@ def read_habit_logs(
         models.HabitLog.habit_id == habit_id
     ).order_by(desc(models.HabitLog.completed_at)).offset(skip).limit(limit).all()
     return logs
+
 
 @router.post("/{habit_id}/logs", response_model=schemas.HabitLogOut, status_code=status.HTTP_201_CREATED)
 def create_habit_log(
@@ -206,8 +217,9 @@ def create_habit_log(
     db.add(log)
     db.commit()
     db.refresh(log)
-    invalidate_pattern("/habits/*")   # <-- инвалидация
+    invalidate_pattern("/habits/*")
     return log
+
 
 @router.get("/{habit_id}", response_model=schemas.HabitOut)
 def read_habit(
@@ -223,6 +235,7 @@ def read_habit(
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
     return habit
+
 
 @router.put("/{habit_id}", response_model=schemas.HabitOut)
 def update_habit(
@@ -242,8 +255,9 @@ def update_habit(
         setattr(habit, field, value)
     db.commit()
     db.refresh(habit)
-    invalidate_pattern("/habits/*")   # <-- инвалидация
+    invalidate_pattern("/habits/*")
     return habit
+
 
 @router.delete("/{habit_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_habit(
@@ -260,8 +274,9 @@ def delete_habit(
         raise HTTPException(status_code=404, detail="Habit not found")
     habit.deleted_at = datetime.utcnow()
     db.commit()
-    invalidate_pattern("/habits/*")   # <-- инвалидация
+    invalidate_pattern("/habits/*")
     return None
+
 
 @router.patch("/{habit_id}/restore", response_model=schemas.HabitOut)
 def restore_habit(
@@ -279,8 +294,9 @@ def restore_habit(
     habit.deleted_at = None
     db.commit()
     db.refresh(habit)
-    invalidate_pattern("/habits/*")   # <-- инвалидация
+    invalidate_pattern("/habits/*")
     return habit
+
 
 @router.get("/{habit_id}/predict")
 def predict_relapse(
@@ -297,3 +313,5 @@ def predict_relapse(
         raise HTTPException(status_code=404, detail="Habit not found")
     result = prediction_service.predict_relapse_risk(db, habit, current_user.id)
     return result
+
+

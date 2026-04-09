@@ -17,4 +17,4 @@ class User(Base):
     verification_token = Column(String, nullable=True, unique=True, index=True)
     reset_password_token = Column(String, nullable=True, unique=True, index=True)
     reset_password_expires = Column(DateTime, nullable=True)
-    
+
